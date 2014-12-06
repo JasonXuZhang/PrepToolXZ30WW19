@@ -2,6 +2,8 @@ var view, height, space, hold, value, text, all = 'touchstart touchmove touchend
 var $voting, $page, $keyboard, $description, $content, $options, $object, $writing, $written, $progress, $review, $c, $counter, $info, $error;
 var Bsettings, Bhelp, Breview, Bcancel, Baccept, Bskip, Bnext, Bback;
 
+var currentIndex, questionCount, questions;
+
 if ( Ballot_Localize.tablet ) {
 	var click = 'touchstart', release = 'touchend';
 } else if ( Ballot_Localize.mobile ) {
@@ -10,28 +12,14 @@ if ( Ballot_Localize.tablet ) {
 	var click = 'mousedown', release = 'mouseup';
 }
 
-if ( Ballot_Localize.limit ) {
-	limit = Ballot_Localize.limit;
-} else {
-	limit = 1;
-}
-
 function init_all() {
-
-	if ( Ballot_Localize.tablet ) {
-		jQuery(document).delegate('body','touchmove',function(e){
-		    e.preventDefault();
-		}).delegate('.scroll','touchmove',function(){
-		    e.stopPropagation();
-		});
-	}
-
-	$c = jQuery('#the-counter');
-	$counter = jQuery('#counter');
+	$c = jQuery('#the-counter-' + currentIndex);
+	$counter = jQuery('#counter-' + currentIndex);
 	$page = jQuery('#page');
 	$info = jQuery('#info');
 	$error = jQuery('#error');
 	$review = jQuery('#review');
+	$review.hide();
 	$progress = jQuery('#progress');
 	Bsettings = jQuery('#button-settings');
 	Bsettings.bind(click, function() {
@@ -42,42 +30,37 @@ function init_all() {
 		info_pane_display('help');
 	});
 	Breview = jQuery('#button-review');
-	Breview.unbind().bind(release, function() { destroy_all(); ballot_ajax( 0 ); });
+	Breview.unbind().bind(release, function() {
+		destroy_all();
+		updateReviewSection();
+		$review.show();
+		Bcast.show();
+	});
 	Bcancel = jQuery('#button-cancel');
 	Baccept = jQuery('#button-accept');
 	Bskip = jQuery('#button-skip');
 	Bskip.unbind().bind(release, function() {
-		destroy_all();
-		if ( Ballot_Localize.flag == 'vote' ) {
-			ballot_ajax( 1 );
-		} else {
-			document.location.href = Ballot_Localize.next;
-		}
+		next(1);
 	});
 	Bnext = jQuery('#button-next');
 	Bnext.unbind().bind(release, function() {
-		destroy_all();
-		if ( Ballot_Localize.flag == 'vote' ) {
-			ballot_ajax( 1 );
-		} else {
-			document.location.href = Ballot_Localize.next;
-		}
+		next(1);
 	});
 	Bback = jQuery('#button-back');
 	Bback.unbind().bind(release, function() {
-		destroy_all();
-		if ( Ballot_Localize.flag == 'review' ) {
-			document.location.href = Ballot_Localize.refer;
-		} else 	if ( Ballot_Localize.flag == 'vote' ) {
-			ballot_ajax( -1 );
-		} else {
-			document.location.href = Ballot_Localize.back;
-		}
+		next(-1);
 	});
 	Bbegin = jQuery('#button-begin');
 	Bbegin.unbind().bind(release, function() { destroy_all(); document.location.href = Ballot_Localize.next; });
 	Bcast = jQuery('#button-cast');
-	Bcast.unbind().bind(release, function() { destroy_all(); document.location.href = Ballot_Localize.next; });
+	Bcast.unbind().bind(release, function() { 
+		destroy_all(); 
+		var result = '';
+		for (var i = 0; i < questionCount; i++) {
+			result += 'q' + (i + 1) + ': ' + questions[i].getIds() + '\n';
+		}
+		alert(result);
+	});
 	Breturn = jQuery('#button-return');
 	Breturn.unbind().bind(release, function() { destroy_all(); document.location.href = Ballot_Localize.back; });
 	Breturnreview = jQuery('#button-return-review');
@@ -106,22 +89,9 @@ function ballot_ajax( d ) {
 		if ( response.success ) {
 			if ( d == 1 ) {
 				document.location.href = Ballot_Localize.next;
-//				jQuery('#ajax-container').load( Ballot_Localize.next + ' #ajax', function() {
-//					destroy_all();
-//					init_all();
-//				});
 			} else if ( d == -1 ) {
 				document.location.href = Ballot_Localize.back;
-//				jQuery('#ajax-container').load( Ballot_Localize.next + ' #ajax', function() {
-//					destroy_all();
-//					init_all();
-//				});
 			} else if ( d == 0 ) {
-				document.location.href = Ballot_Localize.review;
-//				jQuery('#ajax-container').load( Ballot_Localize.next + ' #ajax', function() {
-//					destroy_all();
-//					init_all();
-//				});
 			}
 		}
 	});
@@ -153,15 +123,18 @@ function destroy_all() {
 	$keyboard.hide();
 	$info.hide();
 	$error.hide();
+	for (var i = 1; i <= questionCount; i++) {
+		$cur_question = jQuery('#q' + i);
+		$cur_question.hide();
+	}
 	jQuery('body').addClass('loading');
 }
 
 function scroll_pad_init() {
-	$description = jQuery('#description');
-	$description.height('auto');
-	$content = jQuery('#content');
+	$description = jQuery('#description-' + currentIndex);
+	$content = jQuery('#content-' + currentIndex);
 	$content.height('auto');
-	$options = jQuery('#options');
+	$options = jQuery('#options-' + currentIndex);
 	$options.height('auto');
 	height = $description.height() + $content.height() + $options.height();
 	view = jQuery(window).height() - 200;
@@ -229,7 +202,7 @@ function scroll_pad_check(p) {
 }
 
 function vote_option_init() {
-	$voting = jQuery('#voting');
+	$voting = jQuery('#voting-' + currentIndex);
 	$keyboard = jQuery('#keyboard');
 	button_check();
 	if ( Ballot_Localize.flag == 'review' || Ballot_Localize.flag == 'reviewing' && $review.length > 0 ) {
@@ -240,10 +213,13 @@ function vote_option_init() {
 		});
 	} else {
 		jQuery('.choice').bind(click, function(e) {
+			$currentQuestion = jQuery('#q' + currentIndex);
 			$object = jQuery(this);
-			if ( jQuery('.active').length < limit ) {
+			var choiceId = $object.attr('id');
+			if ( jQuery('.active', $currentQuestion).length < limit ) {
 				if ( $object.hasClass('active') ) {
 					$object.removeClass('active');
+					questions[currentIndex - 1].remove(choiceId);
 					button_check();
 				} else {
 					if ( $object.hasClass('open-keyboard') ) {
@@ -266,6 +242,7 @@ function vote_option_init() {
 							Bskip.hide();
 						}
 						$voting.hide(0, function() {
+							alert($voting.attr('id'));
 							$keyboard.show();
 						});
 						Bback.hide(0, function() {
@@ -273,12 +250,14 @@ function vote_option_init() {
 						});
 					} else {
 						$object.addClass('active');
+						questions[currentIndex - 1].add(choiceId);
 						button_check();
 					}
 				}
 			} else {
 				if ( $object.hasClass('active') ) {
 					$object.removeClass('active');
+					questions[currentIndex - 1].remove(choiceId);
 					button_check();
 				} else {
 					error_pane_display('vote-error');
@@ -324,7 +303,8 @@ function button_check() {
 		Bsettings.show();
 		Bhelp.show();
 	}
-	count = limit - jQuery('.active').length;
+	$currentQuestion = jQuery('#q' + currentIndex);
+	count = limit - jQuery('.active', $currentQuestion).length;
 	if ( count == 0 ) {
 		$c.hide();
 	} else {
@@ -436,9 +416,106 @@ function write_in_init() {
 	});
 }
 
+function init() {
+	questionCount = jQuery('#question-count').html();
+	currentIndex = 1;
+	questions = new Array(questionCount);
+	for (var i = 0; i < questionCount; i++) {
+		questions[i] = new QuestionData();
+	}
+	document.getElementById("q1").style.display = "";
+	for (var i = 2; i <= questionCount; i++) {
+		var divId = "q" + i;
+		document.getElementById(divId).style.display = "none";
+	}
+	$totalCount = jQuery('#progress-total');
+	$totalCount.html(questionCount);
+	updateQuestionData();
+}
+
+function next(increment) {
+	if (currentIndex + increment < 1 || currentIndex + increment > questionCount)
+		return;
+	currentIndex += increment;
+	var divId = "q" + currentIndex;
+	document.getElementById(divId).style.display = "";
+	for (var i = 1; i <= questionCount; i++) {
+		var divId = "q" + i;
+		if (i == currentIndex)
+			continue;
+		document.getElementById(divId).style.display = "none";
+	}
+	$currentPage = jQuery('#progress-current');
+	$currentPage.html(currentIndex);
+	updateQuestionData();
+}
+
+function updateQuestionData() {
+	var questionType = jQuery('#question-type-' + currentIndex).text();
+	$voting = jQuery('#voting-' + currentIndex);
+	if (questionType == 'choose-m-from-n') {
+		var limitId = '#question-limit-' + currentIndex;
+		$limitValue = jQuery(limitId);
+		limit = $limitValue.text();
+		$c = jQuery('#the-counter-' + currentIndex);
+		$counter = jQuery('#counter-' + currentIndex);
+	} else {
+		limit = 1;
+	}
+}
+
 jQuery('document').ready(function($) {
+	init();
 	init_all();
 	$(window).resize(function() {
 		scroll_pad_init();
 	});
 });
+
+function QuestionData() {
+	var selectedIds = new Array();
+	this.add = function (optionId) {
+		if (selectedIds.indexOf(optionId) == -1) {
+			selectedIds.push(optionId);
+			selectedIds.sort();	
+		}
+	};
+	this.remove = function (optionId) {
+		var index = selectedIds.indexOf(optionId);
+		if (index != -1) {
+			selectedIds.splice(index, 1);
+		}
+	};
+	this.getIds = function() {
+		return selectedIds.toString();
+	};
+	this.getIdCount = function() {
+		return selectedIds.length;
+	};
+	this.getIdsArray = function() {
+		return selectedIds;
+	};
+}
+
+function updateReviewSection() {
+	for (var i = 1; i <= questionCount; i++) {
+		var question_content = jQuery('#question-' + i).text();
+		$review_question = jQuery('#review-question-' + i);
+		$review_question.text(question_content);
+		var cur_question = questions[i - 1];
+		var content = '';
+		var count = cur_question.getIdCount();
+		if (count == 0) {
+			content = '(You did not vote for anyone)';
+		} else {
+			var ids = cur_question.getIdsArray();
+			for (var j in ids) {
+				$cur_choice = jQuery('#' + ids[j]);
+				content += $cur_choice.text() + '<br>';
+			}
+		}
+		jQuery('#review-answer-' + i).html(content);
+	}
+}
+
+
