@@ -5,7 +5,7 @@ import java.io.*;
 
 public class Test {
 	@SuppressWarnings({ "unchecked", "rawtypes", "deprecation" })
-	public static void main(String[] args) throws Exception {
+	public void mainTest() throws Exception {
 		Configuration cfg = new Configuration();
 		cfg.setDirectoryForTemplateLoading(new File("."));
 		cfg.setObjectWrapper(new DefaultObjectWrapper());
